@@ -1,4 +1,4 @@
-#! /home/zliu0/usr/anaconda3/envs/tfgpu/bin/python
+#! /usr/bin/python3 
 import tensorflow as tf 
 tf.enable_eager_execution()
 import numpy as np 
@@ -13,17 +13,20 @@ tf.logging.set_verbosity(tf.logging.ERROR)
 parser = argparse.ArgumentParser(description='encode sinogram image.')
 parser.add_argument('-gpus',  type=str, default="0", help='list of visiable GPUs')
 parser.add_argument('-expName', type=str, required=True, help='Experiment name')
+parser.add_argument('-resfolder', type=str, default="train_results", help='place within videos folder where the files will be stored')
 parser.add_argument('-lmse', type=float, default=0.5, help='lambda mse')
 parser.add_argument('-lperc', type=float, default=2.0, help='lambda perceptual')
 parser.add_argument('-ladv', type=float, default=20, help='lambda adv')
 parser.add_argument('-lunet', type=int, default=3, help='Unet layers')
-parser.add_argument('-depth', type=int, default=3, help='input depth')
+parser.add_argument('-depth', type=int, default=1, help='input depth')
+parser.add_argument('-ite', type=int, default=40001, help='number of epochs')
 parser.add_argument('-itg', type=int, default=1, help='iterations for G')
 parser.add_argument('-itd', type=int, default=2, help='iterations for D')
 parser.add_argument('-xtrain', type=str, required=True, help='file name of X for training')
 parser.add_argument('-ytrain', type=str, required=True, help='file name of Y for training')
 parser.add_argument('-xtest', type=str, required=True, help='file name of X for testing')
 parser.add_argument('-ytest', type=str, required=True, help='file name of Y for testing')
+parser.add_argument('-pretrain', type=str, required=False, help='weight files from a pretraianed model to initialize with')
 
 args, unparsed = parser.parse_known_args()
 
@@ -37,15 +40,17 @@ sess = tf.Session(config = config)
 tf.keras.backend.set_session(sess)
 
 mb_size = 16
-img_size = 512
+img_size = 256
 in_depth = args.depth
 disc_iters, gene_iters = args.itd, args.itg
 lambda_mse, lambda_adv, lambda_perc = args.lmse, args.ladv, args.lperc
 
-itr_out_dir = args.expName + '-itrOut'
+itr_out_dir = args.resfolder #args.expName + '-itrOut'
 if os.path.isdir(itr_out_dir): 
     shutil.rmtree(itr_out_dir)
 os.mkdir(itr_out_dir) # to save temp output
+os.mkdir(itr_out_dir+'/iteration_results')
+os.mkdir(itr_out_dir+'/iteration_models')
 
 # redirect print to a file
 sys.stdout = open('%s/%s' % (itr_out_dir, 'iter-prints.log'), 'w') 
@@ -59,6 +64,9 @@ mb_data_iter = bkgdGen(data_generator=gen_train_batch_bg(x_fn=args.xtrain, \
                        max_prefetch=16)   
 
 generator = make_generator_model(input_shape=(None, None, in_depth), nlayers=args.lunet ) 
+if (args.pretrain):
+    print('loading pretrained weights '+args.pretrain)
+    generator.load_weights(args.pretrain)
 discriminator = make_discriminator_model(input_shape=(img_size, img_size, 1))
 
 # input range should be [0, 255]
@@ -85,10 +93,14 @@ ckpt = tf.train.Checkpoint(generator_optimizer=gen_optimizer,
                             generator=generator,
                             discriminator=discriminator)
 
-for epoch in range(40001):
+for epoch in range(args.ite):
     time_git_st = time.time()
     for _ge in range(gene_iters):
+        #print('GE: about to fetch new inputs...')
         X_mb, y_mb = mb_data_iter.next() # with prefetch
+        #print('fetched new inputs:')
+        #print(X_mb.shape)
+        #print(y_mb.shape)
         with tf.GradientTape() as gen_tape:
             gen_tape.watch(generator.trainable_variables)
 
@@ -107,41 +119,43 @@ for epoch in range(40001):
             gen_gradients = gen_tape.gradient(gen_loss, generator.trainable_variables)
             gen_optimizer.apply_gradients(zip(gen_gradients, generator.trainable_variables))
 
-    itr_prints_gen = '[Info] Epoch: %05d, gloss: %.2f (mse%.3f, adv%.3f, perc:%.3f), gen_elapse: %.2fs/itr' % (\
+    itr_prints_gen = '[Info] Epoch: %06d, gloss: %.8f (mse%.8f, adv%.8f, perc:%.8f), gen_elapse: %.8fs/itr' % (\
                      epoch, gen_loss, loss_mse*lambda_mse, loss_adv*lambda_adv, perc_loss*lambda_perc, \
                      (time.time() - time_git_st)/gene_iters, )
     time_dit_st = time.time()
 
     for _de in range(disc_iters):
-        X_mb, y_mb = mb_data_iter.next() # with prefetch        
+        #print('DE: about to fetch new inputs...')
+        X_mb, y_mb = mb_data_iter.next() # with prefetch
+        #print('DE: fetched new inputs:')
+        #print(X_mb.shape)
+        #print(y_mb.shape)
         with tf.GradientTape() as disc_tape:
             disc_tape.watch(discriminator.trainable_variables)
 
             gen_imgs = generator(X_mb, training=False)
-
             disc_real_o = discriminator(y_mb, training=True)
             disc_fake_o = discriminator(gen_imgs, training=True)
-
             disc_loss = discriminator_loss(disc_real_o, disc_fake_o)
 
             disc_gradients = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
             disc_optimizer.apply_gradients(zip(disc_gradients, discriminator.trainable_variables))
 
-    print('%s; dloss: %.2f (r%.3f, f%.3f), disc_elapse: %.2fs/itr, gan_elapse: %.2fs/itr' % (itr_prints_gen,\
+    print('%s; dloss: %.8f (r%.8f, f%.8f), disc_elapse: %.8fs/itr, gan_elapse: %.8fs/itr' % (itr_prints_gen,\
           disc_loss, disc_real_o.numpy().mean(), disc_fake_o.numpy().mean(), \
           (time.time() - time_dit_st)/disc_iters, time.time()-time_git_st))
 
     if epoch % (200//gene_iters) == 0:
         X222, y222 = get1batch4test(x_fn=args.xtest, y_fn=args.ytest, in_depth=in_depth)
         pred_img = generator.predict(X222[:1])
-
-        save2img(pred_img[0,:,:,0], '%s/it%05d.png' % (itr_out_dir, epoch))
+        save2img(pred_img[0,:,:,0], '%s/it%05d.png' % (itr_out_dir+'/iteration_results', epoch))
+        save2img(pred_img[0,:,:,0], '%s/last_iteration.png' % (itr_out_dir))
         if epoch == 0: 
             save2img(y222[0,:,:,0], '%s/gtruth.png' % (itr_out_dir))
             save2img(X222[0,:,:,in_depth//2], '%s/noisy.png' % (itr_out_dir))
 
-        generator.save("%s/%s-it%05d.h5" % (itr_out_dir, args.expName, epoch), \
-                       include_optimizer=False)
+        generator.save("%s/%s-last-model.h5" % (itr_out_dir, args.expName), include_optimizer=False)
+        generator.save("%s/%s-it%05d.h5" % (itr_out_dir+'/iteration_models', args.expName, epoch), include_optimizer=False)
 
         # discriminator.save("%s/disc-it%05d.h5" % (itr_out_dir, epoch), \
         #                include_optimizer=False)
