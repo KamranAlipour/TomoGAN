@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<head>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+        <script>
+                        $(window).on('load',function() 
+                        {
+                             $('.preload').attr('src', function(i,a){
+                             $(this).attr('src','').removeClass('preload').attr('src',a);
+                            });
+                         });
+        </script>
+	<style>
+           div.gifbox {margin : 5px;}
+        </style>
+</head>
+<html>
+	<body>
+		<h1 style = "margin-left:auto">TomoGAN</h1>
+		<p>Trained on samples 2 & 3. clean input (no filter) vs. 10% filter</p>
+		<div style = "text-align:center;margin-left: auto;margin-right: auto;display: flex; width: 80%;">
+                <div class="gifbox" style = "width: 30%;">
+                <p>Ground truth, no filter</p>
+                <img class = "preload" SRC="/tomo/RESULTS_samples2_3_noise_10/s2_gt.gif" width="289" height="235">
+                </div>
+		<div class="gifbox" style = "width: 30%;">
+		<p>10% Filter</p>
+                <img class = "preload" SRC="/tomo/RESULTS_samples2_3_noise_10/s2_10_noisy.gif" width="289" height="235">
+		</div>
+		<div class="gifbox" style = "width: 30%;">
+		<p>Denoised with model</p>
+		<img class = "preload" SRC="/tomo/RESULTS_samples2_3_noise_10/s2_10_denoised.gif" width="289" height="235">
+		</div>
+		<div>
+		<!--video width="400" controls>
+		<source src="/tomo/RESULTS_samples2_3_noise_10/noisy.mp4" type="video/mp4">
+		</video--!>
+	</body>
+</html>
