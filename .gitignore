@@ -1,0 +1,7 @@
+training_results/
+orig_dataset/
+vgg19_weights_notop.h5
+dataset/
+nohup.out
+__pycache__/
+.ipynb_checkpoints/
