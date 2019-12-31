@@ -53,3 +53,10 @@ The corresponding __output__ (i.e., denoised using TomoGAN):
 Video clips
 
 [![](http://img.youtube.com/vi/PcHsOK4qwlk/0.jpg)](http://www.youtube.com/watch?v=PcHsOK4qwlk "Comparison ")
+
+
+# PhotoAcoustic Data
+
+To train and test the model with photoacoustic data, you can use the following link:
+
+the file should be extracted into `./dataset/` folder which contains cropped and full-frame data. cropped folder includes images and also npy format of data where each frame is cropped from top (to exclude the nosiy top) and is split into left (index 0) and right (index 1).
