@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import math
 import csv
 import pdb
+import cv2
 
 tf.logging.set_verbosity(tf.logging.ERROR)
 
@@ -33,7 +34,7 @@ parser.add_argument('-depth', type=int, default=1, help='input depth')
 parser.add_argument('-itg', type=int, default=1, help='iterations for G')
 parser.add_argument('-itd', type=int, default=2, help='iterations for D')
 parser.add_argument('-inputData', type=str, default='dataset/fullframe/frames_1024/', help='directory of input frames')
-parser.add_argument('-split', type=bool, default=False, help='whether the input data is split frames')
+parser.add_argument('-inputdim', type=int, default=1024, help='used to define the size of images when computing the SSIM and PSNR values')
 #parser.add_argument('-test', type=str, required=True, help='file name for testing')
 
 args, unparsed = parser.parse_known_args()
@@ -71,7 +72,7 @@ time_dit_st = time.time()
 
 generator.load_weights(args.weights)
 samples = ['s1','s2','s3']
-p_noisy = ['10','15','20','25'] # # 0% is GT (clean) and the rest are noisy inputs
+p_noisy = ['0','10','15','20','25'] # # 0% is GT (clean) and the rest are noisy inputs
 frame_count = 279 # number of frames per case
 denoise_frames = []
 noisy_frames = []
@@ -83,7 +84,7 @@ result_avgs = []
 filter_legends = []
 
 #data_lbls = ['PSNR','SSIM']
-data_lbls = ['SSIM']
+data_lbls = ['PSNR']
 
 for data_lbl in data_lbls:
   labels = []
@@ -95,23 +96,6 @@ for data_lbl in data_lbls:
           input_np = []
           result_np = []
           for i in range(frame_count): #frame_count):
-            if (args.split):
-                file_name_left = args.inputData+s+'_'+p+'_'+str(i+1).zfill(3)+'-0.jpg'
-                file_name_right = args.inputData+s+'_'+p+'_'+str(i+1).zfill(3)+'-1.jpg'
-                im_left = imageio.imread(file_name_left)
-                im_right = imageio.imread(file_name_right)
-                np_im_left = np.array(im_left)
-                np_im_right = np.array(im_right)
-                np_im_left = np.expand_dims(np_im_left,axis = 0)
-                np_im_right = np.expand_dims(np_im_right,axis = 0)
-                pred_img_left = generator.predict(np_im_left)
-                pred_img_right = generator.predict(np_im_right)
-                denoised_left = pred_img_left[0,:,:,0]
-                denoised_right = pred_img_right[0,:,:,0]
-                denoised_left = (denoised_left - np.min(denoised_left)) / (np.max(denoised_left) - np.min(denoised_left))
-                denoised_right = (denoised_right - np.min(denoised_right)) / (np.max(denoised_right) - np.min(denoised_right))
-                denoised = np.concatenate((denoised_left,denoised_right),axis=1)
-            else:
                 gt_file_name = args.inputData+s+'_0_'+str(i+1).zfill(3)+'_1024x1024.jpg'
                 file_name = args.inputData+s+'_'+p+'_'+str(i+1).zfill(3)+'_1024x1024.jpg'
                 gt_im = imageio.imread(gt_file_name)
@@ -121,10 +105,14 @@ for data_lbl in data_lbls:
                 np_im = np.expand_dims(np_im,axis = 0)
                 pred_img = generator.predict(np_im)
                 denoised = pred_img[0,:,:,0]
+                new_size = args.inputdim
+                np_gt_im = cv2.resize(np_gt_im,(new_size,new_size)) # doing this resize to match the ground truth results based with other models
                 np_gt_im = (np_gt_im - np.min(np_gt_im)) / (np.max(np_gt_im) - np.min(np_gt_im))
                 if np.max(denoised) != np.min(denoised):
                     denoised = (denoised - np.min(denoised)) / (np.max(denoised) - np.min(denoised))
+                denoised = cv2.resize(denoised,(new_size,new_size)) # doing this resize to match the ground truth results based with other models
                 np_im = np_im[0,:,:,0]
+                np_im = cv2.resize(np_im,(new_size,new_size)) # doing this resize to match the ground truth results based with other models
                 np_im = (np_im - np.min(np_im)) / (np.max(np_im) - np.min(np_im))
                 if data_lbl == 'SSIM':
                     input_np.append(ssim(np_gt_im, np_im,  data_range=np.max(np_im) - np.min(np_im)))
@@ -132,9 +120,13 @@ for data_lbl in data_lbls:
                         result_np.append(ssim(np_gt_im, denoised,  data_range=np.max(denoised) - np.min(denoised)))
                 elif data_lbl == 'PSNR':
                     input_diff = np_gt_im - np_im
-                    input_np.append(-10 * math.log10(np.mean(input_diff ** 2)))
+                    if input_diff.min() == 0.0 and input_diff.max() == 0:
+                        input_np.append(-1.0)
+                    else:
+                        input_np.append(-10 * math.log10(np.mean(input_diff ** 2)))
                     result_diff = np_gt_im - denoised
                     result_np.append(-10 * math.log10(np.mean(result_diff ** 2)))
+                    #print(gt_file_name,file_name,'PSNR Input: ',-10 * math.log10(np.mean(input_diff ** 2)),' Model: ',-10 * math.log10(np.mean(result_diff ** 2)))
           sample = s
           filter_lbl = p + '%'
           labels.append(sample)
