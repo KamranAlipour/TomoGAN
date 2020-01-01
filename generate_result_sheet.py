@@ -83,8 +83,7 @@ input_avgs = []
 result_avgs = []
 filter_legends = []
 
-#data_lbls = ['PSNR','SSIM']
-data_lbls = ['PSNR']
+data_lbls = ['PSNR','SSIM']
 
 for data_lbl in data_lbls:
   labels = []
